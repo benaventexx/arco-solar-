@@ -17,6 +17,7 @@ const APP_SHELL = [
   './js/tanplan.js',
   './js/history.js',
   './js/alerts.js',
+  './js/exposure.js',
   './js/ui.js',
   './js/app.js',
   './manifest.json',

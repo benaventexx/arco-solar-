@@ -246,6 +246,16 @@ section.card h2{ font-size:12px; letter-spacing:.12em; text-transform:uppercase;
 .toggleswitch.on{ background:rgba(244,169,59,.25); border-color:var(--gold); }
 .toggleswitch.on::after{ left:20px; background:var(--gold); }
 
+.exposurerow{ display:flex; gap:12px; margin-bottom:14px; }
+.exposurestat{ flex:1; background:var(--bg-2); border-radius:16px; padding:14px; text-align:center; }
+.exposurestat .exlbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+.exposurestat .exval{ font-size:19px; font-weight:700; color:var(--cream); }
+
+.statgrid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
+.stattile{ background:var(--bg-2); border-radius:14px; padding:12px 14px; }
+.stattile .slbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+.stattile .sval{ font-size:16px; font-weight:600; color:var(--cream); }
+
 .rectile{ display:flex; align-items:flex-start; gap:12px; padding:10px 0; border-bottom:1px solid var(--card-border); }
 .rectile:last-of-type{ border-bottom:none; }
 .rectile .ico{ font-size:18px; flex-shrink:0; width:24px; text-align:center; }

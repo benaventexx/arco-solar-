@@ -34,12 +34,25 @@
 
   function localNow(){ return new Date(Date.now() + (state.utcOffset||0)*1000); }
 
-  function currentUV(){
-    if(!state.hourly) return 0;
+  function currentHourIndex(){
+    if(!state.hourly) return -1;
     const isoHour = localNow().toISOString().slice(0,13);
     let idx = state.hourly.time.findIndex(t => t.startsWith(isoHour));
     if(idx < 0) idx = localNow().getUTCHours();
+    return idx;
+  }
+  function currentUV(){
+    if(!state.hourly) return 0;
+    const idx = currentHourIndex();
     return state.hourly.uv_index[idx] ?? 0;
+  }
+  function currentWeather(){
+    if(!state.hourly || !state.hourly.temperature_2m) return null;
+    const idx = currentHourIndex();
+    const temp = state.hourly.temperature_2m[idx];
+    const code = state.hourly.weathercode ? state.hourly.weathercode[idx] : null;
+    if(temp === undefined) return null;
+    return { temp, ...SolarAPI.weatherFor(code) };
   }
 
   function el(id){ return document.getElementById(id); }
@@ -70,7 +83,10 @@
       .map((t,i)=>({ t, uv: state.hourly.uv_index[i] }))
       .filter(h => h.t.startsWith(todayISO));
     const maxUvToday = Math.max(...dayHours.map(h=>h.uv), 1);
+    const sunriseToday = state.daily.sunrise ? state.daily.sunrise[0] : null;
     const sunsetToday = state.daily.sunset ? state.daily.sunset[0] : null;
+    const weather = currentWeather();
+    const solarStats = (!state.isEstimate) ? SolarAPI.solarStatsToday(state.hourly, state.daily) : null;
 
     const sessionActive = Alerts.isSessionActive();
     const sessionMins = Storage2.get('arcoSolar.sessionInterval', 20);
@@ -81,7 +97,7 @@
       <div class="hero">
         <div class="place">
           <span>${I18n.t('nowIn')} <b>${state.place}</b></span>
-          ${state.isEstimate ? `<span class="badge">${I18n.t('offlineEstimate')}</span>` : ''}
+          ${state.isEstimate ? `<span class="badge">${I18n.t('offlineEstimate')}</span>` : (weather ? `<span class="badge">${weather.icon} ${Math.round(weather.temp)}°</span>` : '')}
         </div>
         <div class="biglabel">
           <div class="bignum">${uv.toFixed(1)}</div>
@@ -103,8 +119,17 @@
           <div class="sunmarker" style="left:${arcPct}%;">☀️</div>
         </div>
         <div class="hourcaps"><span>0</span><span>3</span><span>6</span><span>9</span><span>11+</span></div>
-        ${sunsetToday ? `<div class="solarmeta"><span>🌇 ${I18n.t('sunsetToday')}: ${sunsetToday.slice(11,16)}</span></div>` : ''}
+        ${solarStats ? `
+          <div class="statgrid">
+            <div class="stattile"><div class="slbl">${I18n.t('peakUv')}</div><div class="sval">${solarStats.peakUv.toFixed(1)}${solarStats.peakTime ? ` · ${solarStats.peakTime}` : ''}</div></div>
+            <div class="stattile"><div class="slbl">${I18n.t('solarNoon')}</div><div class="sval">${solarStats.solarNoon || '—'}</div></div>
+            <div class="stattile"><div class="slbl">${I18n.t('sunriseLabel')}</div><div class="sval">${sunriseToday ? sunriseToday.slice(11,16) : '—'}</div></div>
+            <div class="stattile"><div class="slbl">${I18n.t('sunsetLabel')}</div><div class="sval">${sunsetToday ? sunsetToday.slice(11,16) : '—'}</div></div>
+          </div>
+        ` : (sunsetToday ? `<div class="solarmeta"><span>🌇 ${I18n.t('sunsetToday')}: ${sunsetToday.slice(11,16)}</span></div>` : '')}
       </div>
+
+      ${renderExposureCard()}
 
       <section class="card">
         <h2>${I18n.t('hourlyTitle')}</h2>
@@ -169,6 +194,38 @@
       ${renderPlanCard()}
     `;
   }
+
+  function fmtHMS(totalSeconds){
+    const s = Math.max(0, totalSeconds);
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+    return h>0 ? `${h}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s` : `${m}m ${String(sec).padStart(2,'0')}s`;
+  }
+  function renderExposureCard(){
+    const active = Exposure.isActive();
+    const uv = currentUV();
+    const effUv = SkinModel.effectiveUV(uv, state.reflective);
+    const burnMin = SkinModel.burnMinutes(state.skin, effUv, state.spf);
+    const elapsed = active ? Exposure.elapsedSeconds() : 0;
+    const remaining = active ? Exposure.remainingSeconds(burnMin) : Math.round(burnMin*60);
+    const overBurn = active && remaining <= 0;
+    return `
+      <section class="card" id="exposureCard">
+        <h2>${I18n.t('exposureTitle')}</h2>
+        <div class="exposurerow">
+          <div class="exposurestat">
+            <div class="exlbl">${I18n.t('exposureTimeInSun')}</div>
+            <div class="exval mono" id="exposureElapsed">${fmtHMS(elapsed)}</div>
+          </div>
+          <div class="exposurestat">
+            <div class="exlbl">${I18n.t('exposureUntilBurn')}</div>
+            <div class="exval mono" id="exposureRemaining" style="color:${overBurn?'var(--vhigh)':'var(--gold)'}">${overBurn ? I18n.t('exposureBurnNow') : fmtHMS(remaining)}</div>
+          </div>
+        </div>
+        <button class="${active?'btn-ghost':'btn-primary'} sharebtn" id="exposureToggleBtn">${active?I18n.t('exposureStop'):I18n.t('exposureStart')}</button>
+        ${active && state.reflective ? `<div class="skinnote" style="margin-top:10px;">💧 ${I18n.t('exposureWaterBreakHint')}</div>` : ''}
+      </section>`;
+  }
+
 
   function renderPlanCard(){
     const st = TanPlan.status();
@@ -318,6 +375,20 @@
 
   function wireTabBody(){
     if(state.tab === 'today'){
+      const exposureBtn = el('exposureToggleBtn');
+      if(exposureBtn){
+        exposureBtn.onclick = async () => {
+          if(Exposure.isActive()){
+            Exposure.stop();
+          } else {
+            if('Notification' in window && Notification.permission === 'default'){
+              try{ await Notification.requestPermission(); }catch(e){}
+            }
+            Exposure.start();
+          }
+          render();
+        };
+      }
       const oilToggle = el('oilToggle');
       if(oilToggle){
         oilToggle.onclick = () => {
@@ -478,6 +549,25 @@
     lbl.textContent = (st.running || st.remaining>0) ? I18n.t(STEP_TITLE_KEY[step.key]) : I18n.t('timerIdleLabel');
     if(startBtn) startBtn.textContent = st.running ? I18n.t('pauseBtn') : (st.remaining>0 ? I18n.t('resumeBtn') : I18n.t('startBtn'));
   }
+
+  function syncExposureDisplay(){
+    const elapsedEl = el('exposureElapsed'), remainingEl = el('exposureRemaining');
+    if(!elapsedEl || !remainingEl) return; // not on the Today tab right now
+    const effUv = SkinModel.effectiveUV(currentUV(), state.reflective);
+    const burnMin = SkinModel.burnMinutes(state.skin, effUv, state.spf);
+    Exposure.checkWarnings(burnMin);
+    Exposure.checkWaterBreak(state.reflective);
+    const remaining = Exposure.remainingSeconds(burnMin);
+    elapsedEl.textContent = fmtHMS(Exposure.elapsedSeconds());
+    if(remaining <= 0){
+      remainingEl.textContent = I18n.t('exposureBurnNow');
+      remainingEl.style.color = 'var(--vhigh)';
+    } else {
+      remainingEl.textContent = fmtHMS(remaining);
+      remainingEl.style.color = 'var(--gold)';
+    }
+  }
+  Exposure.onTick(syncExposureDisplay);
 
   RoutineTimer.onChange(() => { renderSteps(); syncTimerDisplay(); });
   RoutineTimer.onComplete(() => {
@@ -661,6 +751,7 @@
       wireLang();
       maybeRequestNotifications();
       Alerts.resumeSessionIfNeeded();
+      Exposure.resumeIfNeeded();
 
       el('goBtn').onclick = searchCity;
       el('cityInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchCity(); });

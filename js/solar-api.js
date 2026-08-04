@@ -25,11 +25,41 @@
   }
 
   async function fetchLive(lat, lon){
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=uv_index&daily=uv_index_max,sunrise,sunset&timezone=auto&forecast_days=10`);
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=uv_index,temperature_2m,weathercode&daily=uv_index_max,sunrise,sunset&timezone=auto&forecast_days=10`);
     if(!r.ok) throw new Error('network');
     const data = await r.json();
     if(!data || !data.hourly || !data.daily) throw new Error('bad-payload');
     return { hourly: data.hourly, daily: data.daily, utcOffset: data.utc_offset_seconds || 0, isEstimate: false };
+  }
+
+  // WMO weather codes -> a simple emoji + label, good enough for a compact UI badge
+  const WEATHER_CODES = {
+    0:{icon:'☀️',label:'Céu limpo'}, 1:{icon:'🌤️',label:'Maioritariamente limpo'}, 2:{icon:'⛅',label:'Parcialmente nublado'}, 3:{icon:'☁️',label:'Nublado'},
+    45:{icon:'🌫️',label:'Nevoeiro'}, 48:{icon:'🌫️',label:'Nevoeiro'},
+    51:{icon:'🌦️',label:'Chuvisco'}, 53:{icon:'🌦️',label:'Chuvisco'}, 55:{icon:'🌦️',label:'Chuvisco'},
+    61:{icon:'🌧️',label:'Chuva'}, 63:{icon:'🌧️',label:'Chuva'}, 65:{icon:'🌧️',label:'Chuva forte'},
+    71:{icon:'🌨️',label:'Neve'}, 73:{icon:'🌨️',label:'Neve'}, 75:{icon:'🌨️',label:'Neve forte'},
+    80:{icon:'🌦️',label:'Aguaceiros'}, 81:{icon:'🌦️',label:'Aguaceiros'}, 82:{icon:'⛈️',label:'Aguaceiros fortes'},
+    95:{icon:'⛈️',label:'Trovoada'}, 96:{icon:'⛈️',label:'Trovoada'}, 99:{icon:'⛈️',label:'Trovoada forte'},
+  };
+  function weatherFor(code){ return WEATHER_CODES[code] || { icon:'☀️', label:'—' }; }
+
+  // Peak UV time today + solar noon (midpoint between sunrise and sunset)
+  function solarStatsToday(hourly, daily){
+    const todayISO = daily.time[0];
+    let peakUv = 0, peakIdx = -1;
+    hourly.time.forEach((t,i) => {
+      if(t.startsWith(todayISO) && hourly.uv_index[i] > peakUv){ peakUv = hourly.uv_index[i]; peakIdx = i; }
+    });
+    const peakTime = peakIdx >= 0 ? hourly.time[peakIdx].slice(11,16) : null;
+    let solarNoon = null;
+    if(daily.sunrise && daily.sunrise[0] && daily.sunset && daily.sunset[0]){
+      const toMin = (s) => { const [h,m] = s.slice(11,16).split(':').map(Number); return h*60+m; };
+      const midMin = Math.round((toMin(daily.sunrise[0]) + toMin(daily.sunset[0])) / 2);
+      const hh = Math.floor(midMin/60), mm = midMin%60;
+      solarNoon = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+    }
+    return { peakUv, peakTime, solarNoon };
   }
 
   // ---- Clear-sky fallback model, from real solar geometry ----
@@ -103,5 +133,5 @@
     }
   }
 
-  global.SolarAPI = { geocode, searchCities, getForecast };
+  global.SolarAPI = { geocode, searchCities, getForecast, weatherFor, solarStatsToday };
 })(window);
