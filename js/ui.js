@@ -27,6 +27,9 @@
     routineInitialized: false,
     sessionStartMinutes: 0,
     photoSuggestion: null, photoAnalyzing: false,
+    planDaysChoice: 5,
+    reflective: Storage2.get('arcoSolar.reflective', false),
+    oilStep: Storage2.get('arcoSolar.oilStep', false),
   };
 
   function localNow(){ return new Date(Date.now() + (state.utcOffset||0)*1000); }
@@ -136,6 +139,11 @@
 
       <section class="card" id="routineCard">
         <h2>${I18n.t('routineTitle')}</h2>
+        <div class="togglerow" style="margin-top:0;">
+          <span class="lbl">${I18n.t('oilToggleLabel')}</span>
+          <div class="toggleswitch ${state.oilStep?'on':''}" id="oilToggle"></div>
+        </div>
+        ${state.oilStep ? `<div class="skinnote" style="margin-top:6px;">${I18n.t('oilToggleNote')}</div>` : ''}
         <div class="timerbig">
           <div class="tt mono" id="timerDisplay">--:--</div>
           <div class="lbl" id="timerLabel">${I18n.t('timerIdleLabel')}</div>
@@ -157,15 +165,51 @@
           ${[15,20,30,45].map(m => `<div class="sessionchip ${m===sessionMins?'active':''}" data-mins="${m}">${m}min</div>`).join('')}
         </div>
       </section>
+
+      ${renderPlanCard()}
+    `;
+  }
+
+  function renderPlanCard(){
+    const st = TanPlan.status();
+    if(!st){
+      return `
+        <section class="card">
+          <h2>${I18n.t('planTitle')}</h2>
+          <div class="skinnote">${I18n.t('planPickDays')}</div>
+          <div class="sessionpicker" style="margin-top:10px;">
+            ${[3,5,7,10].map(n => `<div class="planchip ${n===state.planDaysChoice?'active':''}" data-days="${n}">${I18n.t('planDays', n)}</div>`).join('')}
+          </div>
+          <button class="btn-primary sharebtn" id="planStartBtn" style="margin-top:12px;">${I18n.t('planStart')}</button>
+        </section>
+      `;
+    }
+    const dots = Array.from({length: st.totalDays}, (_,i) => {
+      const dayIdx = i+1;
+      let cls = '';
+      if(dayIdx < st.dayNumber || (dayIdx===st.dayNumber && st.completedToday)) cls='done';
+      else if(dayIdx===st.dayNumber) cls='today';
+      return `<div class="plandot ${cls}"></div>`;
+    }).join('');
+    return `
+      <section class="card">
+        <h2>${I18n.t('planTitle')}</h2>
+        <div class="skinnote">${st.finished ? I18n.t('planFinished') : I18n.t('planProgress', st.dayNumber, st.totalDays)}</div>
+        <div class="plandots">${dots}</div>
+        ${st.completedToday ? `<div class="plannote">${I18n.t('planTodayDone')}</div>` : ''}
+        ${st.missedDays > 0 ? `<div class="plannote">${I18n.t('planMissedNote', st.missedDays)}</div>` : ''}
+        <button class="btn-ghost sharebtn" id="planStopBtn" style="margin-top:12px;">${I18n.t('planStop')}</button>
+      </section>
     `;
   }
 
   // ---------- Tab: Skin ----------
   function renderSkin(){
     const uv = currentUV();
+    const effUv = SkinModel.effectiveUV(uv, state.reflective);
     const skin = SkinModel.SKIN_TYPES.find(s=>s.id===state.skin);
-    const burnMin = SkinModel.burnMinutes(state.skin, uv, state.spf);
-    const vitD = SkinModel.vitaminDEstimate(uv, 20, state.spf);
+    const burnMin = SkinModel.burnMinutes(state.skin, effUv, state.spf);
+    const vitD = SkinModel.vitaminDEstimate(effUv, 20, state.spf);
     const rec = SkinModel.recommendationsFor(state.skin);
 
     return `
@@ -205,6 +249,7 @@
         <div class="rectile"><span class="ico">🧴</span><div><div class="t1">SPF ${rec.spf}</div><div class="t2">${I18n.t(rec.spfKey)}</div></div></div>
         <div class="rectile"><span class="ico">💧</span><div><div class="t1">${I18n.t('recCareLabel')}</div><div class="t2">${I18n.t(rec.careKey)}</div></div></div>
         <div class="rectile"><span class="ico">☀️</span><div><div class="t1">${I18n.t('recTanLabel')}</div><div class="t2">${I18n.t(rec.tanKey)}</div></div></div>
+        <div class="rectile"><span class="ico">🧴</span><div><div class="t1">${I18n.t('recBoostLabel')}</div><div class="t2">${I18n.t('recBoostBody')}</div></div></div>
         <div class="disclaimer">${I18n.t('burnDisclaimer')}</div>
       </section>
 
@@ -228,6 +273,11 @@
           <div class="burnnum">${burnMin}<span> ${I18n.t('minToBurn')}</span></div>
         </div>
         <div class="vitd">☀️ ${I18n.t('vitaminD')} (20min): ~${vitD} UI</div>
+        <div class="togglerow">
+          <span class="lbl">${I18n.t('reflectiveLabel')}</span>
+          <div class="toggleswitch ${state.reflective?'on':''}" id="reflectiveToggle"></div>
+        </div>
+        ${state.reflective ? `<div class="skinnote" style="margin-top:8px;">${I18n.t('reflectiveNote', effUv)}</div><div class="skinnote">${I18n.t('reflectiveTip')}</div>` : ''}
         <div class="disclaimer">${I18n.t('burnDisclaimer')}</div>
       </section>
     `;
@@ -268,16 +318,41 @@
 
   function wireTabBody(){
     if(state.tab === 'today'){
-      const burnMin = SkinModel.burnMinutes(state.skin, currentUV(), state.spf);
-      const tanFactor = SkinModel.TAN_GOALS.find(g=>g.id===state.tanGoal)?.factor ?? 0.7;
+      const oilToggle = el('oilToggle');
+      if(oilToggle){
+        oilToggle.onclick = () => {
+          state.oilStep = !state.oilStep;
+          Storage2.set('arcoSolar.oilStep', state.oilStep);
+          const st = RoutineTimer.getState();
+          if(!st.running && st.stepIdx===0 && st.remaining===0) state.routineInitialized = false;
+          render();
+        };
+      }
+      const effUvToday = SkinModel.effectiveUV(currentUV(), state.reflective);
+      const burnMin = SkinModel.burnMinutes(state.skin, effUvToday, state.spf);
+      const goalFactor = SkinModel.TAN_GOALS.find(g=>g.id===state.tanGoal)?.factor ?? 0.7;
+      const activePlan = TanPlan.getPlan();
+      const tanFactor = activePlan ? TanPlan.factorForToday(activePlan, goalFactor) : goalFactor;
       if(!state.routineInitialized || (!RoutineTimer.getState().running && RoutineTimer.getState().stepIdx===0 && RoutineTimer.getState().remaining===0)){
-        RoutineTimer.build(burnMin, tanFactor);
+        RoutineTimer.build(burnMin, tanFactor, state.oilStep);
         state.routineInitialized = true;
       }
       renderSteps();
       el('startBtn').onclick = () => RoutineTimer.toggle();
       el('resetBtn').onclick = () => RoutineTimer.reset();
       syncTimerDisplay();
+
+      document.querySelectorAll('.planchip').forEach(chip=>{
+        chip.onclick = () => { state.planDaysChoice = Number(chip.dataset.days); render(); };
+      });
+      const planStartBtn = el('planStartBtn');
+      if(planStartBtn){
+        planStartBtn.onclick = () => { TanPlan.startPlan(state.planDaysChoice, state.tanGoal); render(); };
+      }
+      const planStopBtn = el('planStopBtn');
+      if(planStopBtn){
+        planStopBtn.onclick = () => { TanPlan.stopPlan(); render(); };
+      }
 
       document.querySelectorAll('.sessionchip').forEach(chip=>{
         chip.onclick = () => {
@@ -313,6 +388,10 @@
       document.querySelectorAll('.tanchip').forEach(chipEl=>{
         chipEl.onclick = () => { state.tanGoal = chipEl.dataset.tangoal; Storage2.set('arcoSolar.tanGoal', state.tanGoal); render(); };
       });
+      const reflectiveToggle = el('reflectiveToggle');
+      if(reflectiveToggle){
+        reflectiveToggle.onclick = () => { state.reflective = !state.reflective; Storage2.set('arcoSolar.reflective', state.reflective); render(); };
+      }
 
       const photoBtn = el('skinPhotoBtn');
       const photoInput = el('skinPhotoInput');
@@ -365,9 +444,9 @@
     }
   }
 
-  const STEP_ICON = { sunscreen:'🧴', front:'☀️', flip:'🔄', back:'☀️', reapply:'🧴' };
-  const STEP_TITLE_KEY = { sunscreen:'stepSunscreenTitle', front:'stepFrontTitle', flip:'stepFlipTitle', back:'stepBackTitle', reapply:'stepReapplyTitle' };
-  const STEP_SUB_KEY = { sunscreen:'stepSunscreenSub', front:'stepFrontSub', flip:'stepFlipSub', back:'stepBackSub', reapply:'stepReapplySub' };
+  const STEP_ICON = { sunscreen:'🧴', oil:'💧', front:'☀️', flip:'🔄', back:'☀️', reapply:'🧴' };
+  const STEP_TITLE_KEY = { sunscreen:'stepSunscreenTitle', oil:'stepOilTitle', front:'stepFrontTitle', flip:'stepFlipTitle', back:'stepBackTitle', reapply:'stepReapplyTitle' };
+  const STEP_SUB_KEY = { sunscreen:'stepSunscreenSub', oil:'stepOilSub', front:'stepFrontSub', flip:'stepFlipSub', back:'stepBackSub', reapply:'stepReapplySub' };
 
   function fmt(sec){
     const m = Math.floor(sec/60), s = sec%60;
@@ -404,6 +483,7 @@
   RoutineTimer.onComplete(() => {
     const totalMinutes = RoutineTimer.getSteps().reduce((a,s)=>a+s.seconds,0)/60;
     History.logCompletedSession({ uv: currentUV(), skinId: state.skin, spf: state.spf, totalMinutes });
+    if(TanPlan.getPlan()) TanPlan.markTodayComplete();
     if('Notification' in window && Notification.permission === 'granted'){
       try{ new Notification(I18n.t('appName'), { body: I18n.t('routineDone') }); }catch(e){}
     }
@@ -429,6 +509,7 @@
   async function searchCity(){
     const name = el('cityInput').value.trim();
     if(!name) return;
+    hideSuggestions();
     el('app').innerHTML = `<div class="loading">${I18n.t('locating')}</div>`;
     try{
       const g = await SolarAPI.geocode(name);
@@ -436,6 +517,47 @@
     }catch(e){
       el('app').innerHTML = `<div class="loading">${I18n.t('cityNotFound')}<div class="err">${e.message}</div></div>`;
     }
+  }
+
+  let autocompleteTimer = null;
+  function hideSuggestions(){
+    const box = el('citySuggestions');
+    if(box){ box.innerHTML = ''; box.style.display = 'none'; }
+  }
+  function wireAutocomplete(){
+    const input = el('cityInput');
+    input.addEventListener('input', () => {
+      clearTimeout(autocompleteTimer);
+      const q = input.value.trim();
+      if(q.length < 2){ hideSuggestions(); return; }
+      autocompleteTimer = setTimeout(async () => {
+        try{
+          const results = await SolarAPI.searchCities(q, 5);
+          renderSuggestions(results);
+        }catch(e){ hideSuggestions(); }
+      }, 350);
+    });
+    input.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+  }
+  function renderSuggestions(results){
+    const box = el('citySuggestions');
+    if(!box) return;
+    if(!results.length){ hideSuggestions(); return; }
+    box.style.display = 'block';
+    box.innerHTML = results.map((r,i) => `
+      <div class="suggestrow" data-idx="${i}">
+        <span class="ico">📍</span><span>${r.place}${r.admin ? ` <span class="muted">· ${r.admin}</span>` : ''}</span>
+      </div>
+    `).join('');
+    box.querySelectorAll('.suggestrow').forEach((row,i) => {
+      row.onmousedown = (e) => e.preventDefault(); // keep focus so blur doesn't beat the click
+      row.onclick = () => {
+        const r = results[i];
+        el('cityInput').value = r.place.split(',')[0];
+        hideSuggestions();
+        loadLocation(r.lat, r.lon, r.place);
+      };
+    });
   }
 
   function useGps(){
@@ -499,6 +621,25 @@
     paint();
   }
 
+  function showWelcomeLocate(onDone){
+    const overlay = document.createElement('div');
+    overlay.className = 'onboard-overlay locate-overlay';
+    overlay.innerHTML = `
+      <div class="onboard-card">
+        <div class="emoji">📍</div>
+        <h3>${I18n.t('welcomeLocateTitle')}</h3>
+        <p>${I18n.t('welcomeLocateBody')}</p>
+        <div class="onboard-btns" style="flex-direction:column; gap:8px;">
+          <button class="btn-primary" id="welcomeGpsBtn" style="width:100%;">${I18n.t('welcomeLocateBtn')}</button>
+          <button class="btn-ghost" id="welcomeManualBtn" style="width:100%;">${I18n.t('welcomeLocateManual')}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const finish = () => { overlay.remove(); onDone(); };
+    el('welcomeGpsBtn').onclick = () => { finish(); useGps(); };
+    el('welcomeManualBtn').onclick = finish;
+  }
+
   // ---------- Notifications (local reminders only, no push server) ----------
   function maybeRequestNotifications(){
     const btn = el('notifBtn');
@@ -524,12 +665,17 @@
       el('goBtn').onclick = searchCity;
       el('cityInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchCity(); });
       el('gpsBtn').onclick = useGps;
+      wireAutocomplete();
 
       const saved = Storage2.get('arcoSolar.place', null);
       if(saved){ el('cityInput').value = saved.place.split(',')[0]; loadLocation(saved.lat, saved.lon, saved.place); }
       else { loadLocation(state.lat, state.lon, state.place); }
 
-      showOnboarding();
+      if(!saved && !Storage2.get('arcoSolar.onboarded', false)){
+        showWelcomeLocate(() => showOnboarding());
+      } else {
+        showOnboarding();
+      }
     },
     _state: state, // exposed read-only for tests
   };

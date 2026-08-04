@@ -14,6 +14,7 @@ const APP_SHELL = [
   './js/skin.js',
   './js/skin-photo.js',
   './js/timer.js',
+  './js/tanplan.js',
   './js/history.js',
   './js/alerts.js',
   './js/ui.js',

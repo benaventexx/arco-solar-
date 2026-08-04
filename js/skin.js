@@ -23,6 +23,12 @@
     { spf: 50, label:'50+', factor: 12 },
   ];
 
+  // Reflective surfaces (water, wet sand, snow) bounce extra UV back onto
+  // skin — a well-documented effect (water ~10-25% extra, sand ~15%, fresh
+  // snow up to 80%+). We use a single conservative multiplier as an estimate.
+  const REFLECTION_FACTOR = 1.25;
+  function effectiveUV(uv, reflective){ return reflective ? uv * REFLECTION_FACTOR : uv; }
+
   function burnMinutes(skinId, uv, spf){
     const skin = SKIN_TYPES.find(s=>s.id===skinId) || SKIN_TYPES[2];
     const opt = SPF_OPTIONS.find(o=>o.spf===spf) || SPF_OPTIONS[0];
@@ -57,5 +63,5 @@
   };
   function recommendationsFor(skinId){ return RECOMMENDATIONS[skinId] || RECOMMENDATIONS[3]; }
 
-  global.SkinModel = { SKIN_TYPES, SPF_OPTIONS, TAN_GOALS, skinDescKey, burnMinutes, vitaminDEstimate, recommendationsFor };
+  global.SkinModel = { SKIN_TYPES, SPF_OPTIONS, TAN_GOALS, REFLECTION_FACTOR, skinDescKey, burnMinutes, vitaminDEstimate, recommendationsFor, effectiveUV };
 })(window);

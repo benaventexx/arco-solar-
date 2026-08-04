@@ -30,17 +30,28 @@
   // ---- Recurring session reminders ----
   function isSessionActive(){ return Storage2.get('arcoSolar.sessionActive', false); }
 
+  // Pure function so it's independently testable: even ticks remind about
+  // sunscreen, odd ticks remind about water — alternating rather than
+  // spamming the same message every time.
+  function reminderMessageFor(tickCount){
+    return (tickCount % 2 === 0) ? I18n.t('stepReapplyTitle') || 'Reaplicar protetor' : I18n.t('hydrationReminder');
+  }
+
   function startSession(intervalMinutes, onTick){
     Storage2.set('arcoSolar.sessionActive', true);
     Storage2.set('arcoSolar.sessionInterval', intervalMinutes);
     clearInterval(sessionInterval);
+    let tickCount = Storage2.get('arcoSolar.sessionTickCount', 0);
     sessionInterval = setInterval(() => {
-      notify('Arco Solar', 'Hora de reaplicar o protetor solar.');
+      notify('Arco Solar', reminderMessageFor(tickCount));
+      tickCount++;
+      Storage2.set('arcoSolar.sessionTickCount', tickCount);
       onTick && onTick();
     }, intervalMinutes * 60 * 1000);
   }
   function stopSession(){
     Storage2.set('arcoSolar.sessionActive', false);
+    Storage2.set('arcoSolar.sessionTickCount', 0);
     clearInterval(sessionInterval);
     sessionInterval = null;
   }
@@ -51,5 +62,5 @@
     }
   }
 
-  global.Alerts = { checkHighUV, isSessionActive, startSession, stopSession, resumeSessionIfNeeded };
+  global.Alerts = { checkHighUV, isSessionActive, startSession, stopSession, resumeSessionIfNeeded, reminderMessageFor };
 })(window);

@@ -7,11 +7,21 @@
 (function(global){
 
   async function geocode(name){
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=pt&format=json`);
+    const results = await searchCities(name, 1);
+    if(!results.length) throw new Error(I18n.t('cityNotFound'));
+    return results[0];
+  }
+
+  async function searchCities(name, count){
+    if(!name || name.trim().length < 2) return [];
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name.trim())}&count=${count||5}&language=pt&format=json`);
     const j = await r.json();
-    if(!j.results || !j.results.length) throw new Error(I18n.t('cityNotFound'));
-    const top = j.results[0];
-    return { lat: top.latitude, lon: top.longitude, place: `${top.name}, ${top.country}` };
+    if(!j.results) return [];
+    return j.results.map(top => ({
+      lat: top.latitude, lon: top.longitude,
+      place: `${top.name}, ${top.country}`,
+      admin: top.admin1 || '',
+    }));
   }
 
   async function fetchLive(lat, lon){
@@ -93,5 +103,5 @@
     }
   }
 
-  global.SolarAPI = { geocode, getForecast };
+  global.SolarAPI = { geocode, searchCities, getForecast };
 })(window);

@@ -26,12 +26,13 @@
     try{ if(navigator.vibrate) navigator.vibrate(pattern); }catch(e){ /* not available */ }
   }
 
-  function build(burnMinutes, tanFactor){
+  function build(burnMinutes, tanFactor, includeOil){
     const factor = typeof tanFactor === 'number' ? tanFactor : 0.7;
     const targetMinutes = Math.min(burnMinutes * factor, burnMinutes * 0.95); // never exceed safe burn time
     const perSide = Math.max(Math.round(targetMinutes/2), 5);
     steps = [
       { key:'sunscreen', seconds:600, done:false },
+      ...(includeOil ? [{ key:'oil', seconds:120, done:false }] : []),
       { key:'front',     seconds:perSide*60, done:false },
       { key:'flip',      seconds:20, done:false },
       { key:'back',      seconds:perSide*60, done:false },

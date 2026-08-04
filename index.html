@@ -30,10 +30,11 @@
   </header>
 
   <div class="locrow">
-    <input id="cityInput" placeholder="Cidade" value="Nazaré" aria-label="Cidade">
+    <input id="cityInput" placeholder="Cidade" value="Nazaré" aria-label="Cidade" autocomplete="off">
     <button id="goBtn">Localizar</button>
     <button id="gpsBtn" title="Usar GPS" aria-label="Usar GPS">📍</button>
   </div>
+  <div id="citySuggestions" class="suggestbox" style="display:none;"></div>
 
   <div class="tabs" role="tablist">
     <div class="tab active" data-tab="today" role="tab">Hoje</div>
@@ -61,6 +62,7 @@
 <script src="js/skin.js"></script>
 <script src="js/skin-photo.js"></script>
 <script src="js/timer.js"></script>
+<script src="js/tanplan.js"></script>
 <script src="js/history.js"></script>
 <script src="js/alerts.js"></script>
 <script src="js/ui.js"></script>
